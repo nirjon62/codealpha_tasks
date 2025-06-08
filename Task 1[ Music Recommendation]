@@ -1,0 +1,106 @@
+!mkdir -p ~/.kaggle
+!cp kaggle.json ~/.kaggle/
+!chmod 600 ~/.kaggle/kaggle.json
+
+
+!pip install -q kaggle
+!kaggle datasets download -d vatsalmavani/spotify-dataset
+
+import zipfile
+
+with zipfile.ZipFile('spotify-dataset.zip', 'r') as zip_ref:
+    zip_ref.extractall('spotify-dataset')
+
+
+import pandas as pd
+df = pd.read_csv("/content/spotify-dataset/data/data.csv")  # Replace with the actual dataset path
+df = df.sample(n=5000,random_state=42).reset_index(drop=True)
+df.head()
+
+
+
+from sklearn.preprocessing import StandardScaler
+
+numerical_features = [
+    "valence", "danceability", "energy", "tempo",
+    "acousticness", "liveness", "speechiness", "instrumentalness"
+]
+
+
+scaler = StandardScaler()
+df_scaled = pd.DataFrame(scaler.fit_transform(df[numerical_features]), columns=numerical_features)
+
+
+
+from sklearn.model_selection import train_test_split
+
+train_data, test_data = train_test_split(df_scaled, test_size=0.2, random_state=42)
+
+
+from sklearn.cluster import KMeans
+import matplotlib.pyplot as plt
+
+inertia = []
+k_values = range(1, 11)
+
+for k in k_values:
+    kmeans = KMeans(n_clusters=k, random_state=42)
+    kmeans.fit(train_data)
+    inertia.append(kmeans.inertia_)
+
+
+plt.plot(k_values, inertia, marker='o')
+plt.xlabel('Number of Clusters (k)')
+plt.ylabel('Inertia')
+plt.title('Elbow Method for Optimal k')
+plt.show()
+
+
+
+
+optimal_k = 5
+kmeans = KMeans(n_clusters=optimal_k, random_state=42)
+df["Cluster"] = kmeans.fit_predict(df_scaled)
+
+
+from sklearn.decomposition import PCA
+
+pca = PCA(n_components=2)
+pca_result = pca.fit_transform(df_scaled)
+
+plt.figure(figsize=(10,8))
+plt.scatter(pca_result[:, 0], pca_result[:, 1], c=df["Cluster"], cmap="viridis")
+plt.title("K-Means Clusters")
+plt.show()
+
+
+
+
+
+from sklearn.metrics.pairwise import cosine_similarity
+import numpy as np
+
+def recommend_songs(song_name, df, num_recommendations=5):
+    song_cluster = df[df["name"] == song_name]["Cluster"].values[0]
+
+    same_cluster_songs = df[df["Cluster"] == song_cluster]
+
+ 
+    song_index = same_cluster_songs[same_cluster_songs["name"] == song_name].index[0]
+    cluster_features = same_cluster_songs[numerical_features]
+    similarity = cosine_similarity(cluster_features, cluster_features)
+
+
+    similar_songs = np.argsort(similarity[song_index])[-(num_recommendations + 1):-1][::-1]
+    recommendations = same_cluster_songs.iloc[similar_songs][["name", "year", "artists"]]
+
+    return recommendations
+
+
+
+
+input_song =  "Camby Bolongo"
+recommended_songs = recommend_songs(input_song, df, num_recommendations=5)
+
+print(f"Songs similar to '{input_song}':")
+recommended_songs
